@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Clock3,
@@ -8,10 +8,13 @@ import {
   Gauge,
   PlayCircle,
   Sparkles,
+  Zap,
+  X,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Alert } from '@/lib/api-client'
 import type { ExperimentRun, Sweep } from '@/lib/types'
 
@@ -21,6 +24,8 @@ interface ContextualOperationsPanelProps {
   alerts: Alert[]
   onInsertPrompt: (prompt: string) => void
 }
+
+const NEW_RUN_DISMISS_MS = 30_000
 
 function formatRelativeTime(date: Date) {
   const diffMs = Date.now() - date.getTime()
@@ -32,12 +37,68 @@ function formatRelativeTime(date: Date) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+function getRunStatusColor(status: ExperimentRun['status']) {
+  switch (status) {
+    case 'running': return 'bg-blue-500 animate-pulse'
+    case 'completed': return 'bg-emerald-500'
+    case 'failed': return 'bg-destructive'
+    case 'queued': return 'bg-muted-foreground/80'
+    case 'ready': return 'bg-muted-foreground/80'
+    case 'canceled': return 'bg-muted-foreground'
+    default: return 'bg-muted-foreground'
+  }
+}
+
 export function ContextualOperationsPanel({
   runs,
   sweeps,
   alerts,
   onInsertPrompt,
 }: ContextualOperationsPanelProps) {
+  // ── Track new runs ──
+  const seenRunIdsRef = useRef<Set<string>>(new Set())
+  const initializedRef = useRef(false)
+  const [newRunIds, setNewRunIds] = useState<string[]>([])
+
+  useEffect(() => {
+    const currentIds = new Set(runs.map((r) => r.id))
+
+    if (!initializedRef.current) {
+      // First render: seed the set without showing anything as "new"
+      seenRunIdsRef.current = currentIds
+      initializedRef.current = true
+      return
+    }
+
+    const freshIds: string[] = []
+    currentIds.forEach((id) => {
+      if (!seenRunIdsRef.current.has(id)) {
+        freshIds.push(id)
+      }
+    })
+
+    if (freshIds.length > 0) {
+      seenRunIdsRef.current = new Set([...seenRunIdsRef.current, ...freshIds])
+      setNewRunIds((prev) => [...new Set([...prev, ...freshIds])])
+    }
+  }, [runs])
+
+  // Auto-dismiss new run indicators after timeout
+  useEffect(() => {
+    if (newRunIds.length === 0) return
+    const timer = setTimeout(() => setNewRunIds([]), NEW_RUN_DISMISS_MS)
+    return () => clearTimeout(timer)
+  }, [newRunIds])
+
+  const dismissNewRun = useCallback((id: string) => {
+    setNewRunIds((prev) => prev.filter((rid) => rid !== id))
+  }, [])
+
+  const newRuns = useMemo(
+    () => runs.filter((run) => newRunIds.includes(run.id)),
+    [runs, newRunIds]
+  )
+
   const runningRuns = useMemo(
     () => runs.filter((run) => run.status === 'running'),
     [runs]
@@ -64,6 +125,61 @@ export function ContextualOperationsPanel({
   return (
     <div className="h-full overflow-y-auto px-2 py-2">
       <div className="space-y-2">
+        {newRuns.length > 0 && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="px-3 py-2 pb-1.5">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                <span className="inline-flex items-center gap-1.5">
+                  <Zap className="h-4 w-4 text-primary" />
+                  New Runs
+                </span>
+                <Badge variant="outline" className="text-[10px] border-primary/30">
+                  {newRuns.length} new
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 pt-0">
+              <div className="flex flex-wrap gap-1.5">
+                {newRuns.map((run) => (
+                  <Tooltip key={run.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => onInsertPrompt(`@run:${run.id} this run just appeared — check its status and config.`)}
+                        className="group inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary/60 hover:border-primary/40"
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${getRunStatusColor(run.status)}`} />
+                        <span className="max-w-[100px] truncate">{run.alias || run.name || run.id}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            dismissNewRun(run.id)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation()
+                              dismissNewRun(run.id)
+                            }
+                          }}
+                          className="ml-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">{run.alias || run.name} — {run.status}</p>
+                      <p className="text-[10px] text-muted-foreground">Click to review in chat</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="border-border/80 bg-card/95">
           <CardHeader className="px-3 py-2 pb-1.5">
             <CardTitle className="flex items-center justify-between gap-2 text-sm">

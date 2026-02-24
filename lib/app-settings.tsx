@@ -75,10 +75,10 @@ export const defaultAppSettings: AppSettings = {
   leftPanel: {
     items: [
       { id: "chat", label: "Chat", visible: true, order: 0 },
-      { id: "runs", label: "Runs", visible: true, order: 1 },
-      { id: "charts", label: "Charts", visible: true, order: 2 },
-      { id: "insights", label: "Insights", visible: true, order: 3 },
-      { id: "terminal", label: "Terminal", visible: true, order: 4 },
+      { id: "runs", label: "Runs", visible: false, order: 1 },
+      { id: "charts", label: "Charts", visible: false, order: 2 },
+      { id: "insights", label: "Insights", visible: false, order: 3 },
+      { id: "terminal", label: "Terminal", visible: false, order: 4 },
     ],
   },
   developer: {
@@ -89,7 +89,7 @@ export const defaultAppSettings: AppSettings = {
     showMemoryPanel: false,
     showReportPanel: false,
     showTerminalPanel: false,
-    showContextualPanel: false,
+    showContextualPanel: true,
     showJourneyPanel: false,
     showChatContextPanel: false,
   },
