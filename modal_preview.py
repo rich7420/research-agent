@@ -228,3 +228,42 @@ def preview_opencode():
         env=env,
         cwd="/app",
     )
+
+
+# ---------------------------------------------------------------------------
+# Landing page – lightweight static HTML endpoint
+# ---------------------------------------------------------------------------
+
+_landing_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .add_local_file("docs/index.html", "/landing/index.html", copy=True)
+)
+
+
+@app.function(image=_landing_image, cpu=0.25, memory=128)
+@modal.concurrent(max_inputs=100)
+@modal.asgi_app()
+def landing_page():
+    """Serve the static landing page."""
+
+    with open("/landing/index.html", "r") as f:
+        html_content = f.read()
+
+    async def asgi_handler(scope, receive, send):
+        if scope["type"] != "http":
+            return
+        await send({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [
+                [b"content-type", b"text/html; charset=utf-8"],
+                [b"cache-control", b"public, max-age=3600"],
+            ],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": html_content.encode("utf-8"),
+        })
+
+    return asgi_handler
+
